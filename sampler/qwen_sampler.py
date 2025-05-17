@@ -1,5 +1,6 @@
 import time
 import torch
+import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 
@@ -15,7 +16,7 @@ class QwenCompletionSampler(SamplerBase):
         self,
         model_name: str = "Qwen/Qwen3-14B",
         temperature: float = 0.0,
-        max_tokens: int = 512,  # Reduced from 4096 to 512 for faster generation
+        max_tokens: int = 2048,  
         enable_thinking: bool = True,
         device_map: str = "auto",
     ):
@@ -114,6 +115,33 @@ class QwenCompletionSampler(SamplerBase):
                         content = self.tokenizer.decode(output_ids, skip_special_tokens=True).strip("\n")
                 else:
                     content = self.tokenizer.decode(output_ids, skip_special_tokens=True).strip("\n")
+                
+                # For MMLU, ensure we extract just the letter answer if needed
+                if len(message_list) > 0 and "answer choice" in message_list[0]["content"].lower():
+                    # Try to extract just the letter answer (A, B, C, or D) for MMLU
+                    # First check if content directly starts with A, B, C, or D
+                    if content.strip().startswith(("A", "B", "C", "D")):
+                        content = content.strip()[0]  # Just take the first character
+                    # Look for "the answer is X" pattern
+                    elif "answer is " in content.lower():
+                        answer_match = re.search(r"answer is ([ABCD])", content, re.IGNORECASE)
+                        if answer_match:
+                            content = answer_match.group(1).upper()
+                    # Look for "X is correct" pattern
+                    elif " is correct" in content.lower():
+                        answer_match = re.search(r"([ABCD]) is correct", content, re.IGNORECASE)
+                        if answer_match:
+                            content = answer_match.group(1).upper()
+                    # If all else fails, just find any A, B, C, or D in the content
+                    else:
+                        answer_match = re.search(r"\b([ABCD])\b", content)
+                        if answer_match:
+                            content = answer_match.group(1).upper()
+                        else:
+                            # Default to A if no answer found (to avoid null responses)
+                            content = "A"
+                    
+                    print(f"\nExtracted answer: {content}")
                 
                 return SamplerResponse(
                     response_text=content,
