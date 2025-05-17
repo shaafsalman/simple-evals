@@ -32,47 +32,15 @@ def main():
         type=str,
         help="Select an eval by name. Also accepts a comma-separated list of evals.",
     )
-    parser.add_argument(
-        "--n-repeats",
-        type=int,
-        default=None,
-        help="Number of repeats to run. Only supported for certain evals.",
-    )
-    parser.add_argument(
-        "--n-threads",
-        type=int,
-        default=120,
-        help="Number of threads to run. Only supported for HealthBench and HealthBenchMeta.",
-    )
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-    parser.add_argument(
-        "--examples", type=int, help="Number of examples to use (overrides default)"
-    )
-    parser.add_argument(
-        "--temperature", type=float, default=0.0, help="Temperature for generation"
-    )
-    parser.add_argument(
-        "--enable-thinking", action="store_true", default=True, 
-        help="Enable thinking mode for Qwen models"
-    )
 
     args = parser.parse_args()
 
+    # Hardcoded model initialization
     models = {
-        # Qwen models
         "qwen-14b": QwenCompletionSampler(
             model_name="Qwen/Qwen3-14B",
-            temperature=args.temperature,
-            enable_thinking=args.enable_thinking,
-        ),
-        "qwen-14b-temp-1": QwenCompletionSampler(
-            model_name="Qwen/Qwen3-14B",
-            temperature=1.0,
-            enable_thinking=args.enable_thinking,
-        ),
-        "qwen-14b-no-thinking": QwenCompletionSampler(
-            model_name="Qwen/Qwen3-14B",
-            temperature=args.temperature,
+            temperature=0.3,
             enable_thinking=False,
         ),
     }
@@ -93,7 +61,7 @@ def main():
 
     print(f"Running with args {args}")
 
-    # Use GPT-4.1 for grading
+    # Use GPT-4.1 for grading (hardcoded)
     grading_sampler = ChatCompletionSampler(
         model="gpt-4.1-2025-04-14",
         system_message=OPENAI_SYSTEM_MESSAGE_API,
@@ -102,10 +70,11 @@ def main():
     equality_checker = ChatCompletionSampler(model="gpt-4-turbo-preview")
 
     def get_evals(eval_name, debug_mode):
-        num_examples = (
-            args.examples if args.examples is not None else (5 if debug_mode else None)
-        )
-        # Set num_examples = None to reproduce full evals
+        # Hardcoded values for examples, repeats, and threads
+        num_examples = 5 if debug_mode else None
+        n_repeats = 1
+        n_threads = 120
+        
         match eval_name:
             case "mmlu":
                 return MMLUEval(num_examples=1 if debug_mode else num_examples)
@@ -113,32 +82,32 @@ def main():
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=args.n_repeats or 1,
-                    n_threads=args.n_threads or 1,
+                    n_repeats=n_repeats,
+                    n_threads=n_threads,
                     subset_name=None,
                 )
             case "healthbench_hard":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=args.n_repeats or 1,
-                    n_threads=args.n_threads or 1,
+                    n_repeats=n_repeats,
+                    n_threads=n_threads,
                     subset_name="hard",
                 )
             case "healthbench_consensus":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=args.n_repeats or 1,
-                    n_threads=args.n_threads or 1,
+                    n_repeats=n_repeats,
+                    n_threads=n_threads,
                     subset_name="consensus",
                 )
             case "healthbench_meta":
                 return HealthBenchMetaEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=args.n_repeats or 1,
-                    n_threads=args.n_threads or 1,
+                    n_repeats=n_repeats,
+                    n_threads=n_threads,
                 )
             case _:
                 raise Exception(f"Unrecognized eval type: {eval_name}")
