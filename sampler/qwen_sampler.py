@@ -16,8 +16,8 @@ class QwenCompletionSampler(SamplerBase):
         self,
         model_name: str = "Qwen/Qwen3-14B",
         temperature: float = 0.0,
-        max_tokens: int = 2048,  
-        enable_thinking: bool = True,
+        max_tokens: int = 4048,  
+        enable_thinking: bool = False,
         device_map: str = "auto",
     ):
         self.model_name = model_name

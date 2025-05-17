@@ -6,18 +6,30 @@ from datetime import datetime
 import pandas as pd
 
 from . import common
+from .browsecomp_eval import BrowseCompEval
+from .drop_eval import DropEval
+from .gpqa_eval import GPQAEval
 from .healthbench_eval import HealthBenchEval
 from .healthbench_meta_eval import HealthBenchMetaEval
+from .math_eval import MathEval
+from .mgsm_eval import MGSMEval
 from .mmlu_eval import MMLUEval
-import os
-import json
+from .humaneval_eval import HumanEval
+from .sampler.chat_completion_sampler import (
+    OPENAI_SYSTEM_MESSAGE_API,
+    OPENAI_SYSTEM_MESSAGE_CHATGPT,
+    ChatCompletionSampler,
+)
 from .sampler.qwen_sampler import QwenCompletionSampler
-from .sampler.chat_completion_sampler import ChatCompletionSampler, OPENAI_SYSTEM_MESSAGE_API
+from .sampler.claude_sampler import ClaudeCompletionSampler, CLAUDE_SYSTEM_MESSAGE_LMSYS
+from .sampler.o_chat_completion_sampler import OChatCompletionSampler
+from .sampler.responses_sampler import ResponsesSampler
+from .simpleqa_eval import SimpleQAEval
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run medical evaluations using Qwen models."
+        description="Run sampling and evaluations using different samplers and evaluations."
     )
     parser.add_argument(
         "--list-models", action="store_true", help="List available models"
@@ -32,21 +44,31 @@ def main():
         type=str,
         help="Select an eval by name. Also accepts a comma-separated list of evals.",
     )
+    parser.add_argument(
+        "--n-repeats",
+        type=int,
+        default=None,
+        help="Number of repeats to run. Only supported for certain evals.",
+    )
+    parser.add_argument(
+        "--n-threads",
+        type=int,
+        default=8,
+        help="Number of threads to run. Only supported for HealthBench and HealthBenchMeta.",
+    )
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+    parser.add_argument(
+        "--examples", type=int, help="Number of examples to use (overrides default)"
+    )
 
     args = parser.parse_args()
-    
-    # Force debug mode to always be True to limit the number of examples
-    args.debug = True
 
-    # Hardcoded model initialization
     models = {
-        "qwen-14b": QwenCompletionSampler(
+        # Reasoning Models
+        "Qwen/Qwen3-14B": QwenCompletionSampler(
             model_name="Qwen/Qwen3-14B",
-            temperature=0.3,
-            enable_thinking=False,
-            max_tokens=1024, 
         ),
+     
     }
 
     if args.list_models:
@@ -65,52 +87,53 @@ def main():
 
     print(f"Running with args {args}")
 
-    # Use GPT-4.1 for grading (hardcoded)
     grading_sampler = ChatCompletionSampler(
         model="gpt-4.1-2025-04-14",
         system_message=OPENAI_SYSTEM_MESSAGE_API,
         max_tokens=2048,
     )
     equality_checker = ChatCompletionSampler(model="gpt-4-turbo-preview")
+    # ^^^ used for fuzzy matching, just for math
 
     def get_evals(eval_name, debug_mode):
-        num_examples = 10
-        n_repeats = 1
-        n_threads = 4
-        
+        num_examples = (
+            args.examples if args.examples is not None else (5 if debug_mode else None)
+        )
+        # Set num_examples = None to reproduce full evals
         match eval_name:
             case "mmlu":
-                return MMLUEval(num_examples=1 if debug_mode else 10)  # Limit to 10 examples
+                return MMLUEval(num_examples=1 if debug_mode else num_examples)
+    
             case "healthbench":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=n_repeats,
-                    n_threads=n_threads,
+                    n_repeats=args.n_repeats or 1,
+                    n_threads=args.n_threads or 1,
                     subset_name=None,
                 )
             case "healthbench_hard":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=n_repeats,
-                    n_threads=n_threads,
+                    n_repeats=args.n_repeats or 1,
+                    n_threads=args.n_threads or 1,
                     subset_name="hard",
                 )
             case "healthbench_consensus":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=n_repeats,
-                    n_threads=n_threads,
+                    n_repeats=args.n_repeats or 1,
+                    n_threads=args.n_threads or 1,
                     subset_name="consensus",
                 )
             case "healthbench_meta":
                 return HealthBenchMetaEval(
                     grader_model=grading_sampler,
                     num_examples=10 if debug_mode else num_examples,
-                    n_repeats=n_repeats,
-                    n_threads=n_threads,
+                    n_repeats=args.n_repeats or 1,
+                    n_threads=args.n_threads or 1,
                 )
             case _:
                 raise Exception(f"Unrecognized eval type: {eval_name}")
@@ -121,8 +144,8 @@ def main():
         for eval_name in evals_list:
             try:
                 evals[eval_name] = get_evals(eval_name, args.debug)
-            except Exception as e:
-                print(f"Error: eval '{eval_name}' not found. Exception: {e}")
+            except Exception:
+                print(f"Error: eval '{eval_name}' not found.")
                 return
     else:
         evals = {
