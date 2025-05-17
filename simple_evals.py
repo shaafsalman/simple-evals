@@ -35,6 +35,9 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
 
     args = parser.parse_args()
+    
+    # Force debug mode to always be True to limit the number of examples
+    args.debug = True
 
     # Hardcoded model initialization
     models = {
@@ -42,6 +45,7 @@ def main():
             model_name="Qwen/Qwen3-14B",
             temperature=0.3,
             enable_thinking=False,
+            max_tokens=1024, 
         ),
     }
 
@@ -70,14 +74,13 @@ def main():
     equality_checker = ChatCompletionSampler(model="gpt-4-turbo-preview")
 
     def get_evals(eval_name, debug_mode):
-        # Hardcoded values for examples, repeats, and threads
-        num_examples = 5 if debug_mode else None
+        num_examples = 10
         n_repeats = 1
-        n_threads = 120
+        n_threads = 4
         
         match eval_name:
             case "mmlu":
-                return MMLUEval(num_examples=1 if debug_mode else num_examples)
+                return MMLUEval(num_examples=1 if debug_mode else 10)  # Limit to 10 examples
             case "healthbench":
                 return HealthBenchEval(
                     grader_model=grading_sampler,

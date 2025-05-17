@@ -15,7 +15,7 @@ class QwenCompletionSampler(SamplerBase):
         self,
         model_name: str = "Qwen/Qwen3-14B",
         temperature: float = 0.0,
-        max_tokens: int = 4096,
+        max_tokens: int = 512,  # Reduced from 4096 to 512 for faster generation
         enable_thinking: bool = True,
         device_map: str = "auto",
     ):
@@ -83,6 +83,11 @@ class QwenCompletionSampler(SamplerBase):
                 
                 # Generate response
                 print(f"Generating response with max_new_tokens={self.max_tokens}, temperature={self.temperature}")
+                
+                # For MMLU, let's print the input prompt to see what's being processed
+                if len(message_list) > 0 and "answer choice" in message_list[0]["content"].lower():
+                    print(f"Processing MMLU question: {message_list[0]['content'][:100]}...")
+                
                 generated_ids = self.model.generate(
                     **model_inputs,
                     max_new_tokens=self.max_tokens,
@@ -92,6 +97,9 @@ class QwenCompletionSampler(SamplerBase):
                 
                 # Extract only the newly generated tokens
                 output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+                
+                # Print a small success indicator
+                print(".", end="", flush=True)
                 
                 # Parse thinking content if enabled
                 thinking_content = ""
