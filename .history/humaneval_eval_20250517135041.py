@@ -14,7 +14,7 @@ from human_eval.execution import check_correctness  # , unsafe_execute
 
 from . import common
 from .common import HTML_JINJA
-from .model_types import Eval, EvalResult, SamplerBase, SingleEvalResult
+from .types import Eval, EvalResult, SamplerBase, SingleEvalResult
 
 
 def evaluate_functional_correctness(

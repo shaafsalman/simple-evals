@@ -18,7 +18,7 @@ from .common import (
     normalize_extracted_answer,
     normalize_response,
 )
-from .model_types import Eval, EvalResult, SamplerBase, SingleEvalResult
+from .types import Eval, EvalResult, SamplerBase, SingleEvalResult
 
 subject2category = {
     "abstract_algebra": "stem",

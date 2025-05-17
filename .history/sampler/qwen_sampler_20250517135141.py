@@ -2,7 +2,7 @@ import time
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from ..model_types import MessageList, SamplerBase, SamplerResponse
+from ..types import MessageList, SamplerBase, SamplerResponse
 from .. import common
 
 class QwenCompletionSampler(SamplerBase):
