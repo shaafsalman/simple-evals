@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
 
     models = {
-        "qwen": QwenCompletionSampler(model_name="qwen") 
+        "qwen": QwenCompletionSampler(name="qwen") 
     }
 
     if args.list_models:
