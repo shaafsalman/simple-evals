@@ -6,7 +6,7 @@ from datetime import datetime
 from . import common
 from .healthbench_eval import HealthBenchEval
 from .healthbench_meta_eval import HealthBenchMetaEval
-from .sampler.qwen_sampler import QwenCompletionSampler  
+from .sampler.qwen_sampler import QwenCompletionSampler  # Make sure this is implemented
 
 def main():
     parser = argparse.ArgumentParser(description="Run medical evals with Qwen")
