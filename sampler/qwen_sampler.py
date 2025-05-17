@@ -1,6 +1,7 @@
 import time
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
 from ..model_types import MessageList, SamplerBase, SamplerResponse
 from .. import common
@@ -16,21 +17,36 @@ class QwenCompletionSampler(SamplerBase):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         enable_thinking: bool = True,
+        device_map: str = "auto",
     ):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.enable_thinking = enable_thinking
+        self.device_map = device_map
         
-        # Initialize tokenizer and model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype="auto",
-            device_map="auto"
-        )
+        # Set Huggingface cache directory if needed
+        cache_dir = os.environ.get("TRANSFORMERS_CACHE", None)
+        
+        print(f"Initializing {model_name} with temperature={temperature}, enable_thinking={enable_thinking}")
+        
+        try:
+            # Initialize tokenizer and model
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+            print(f"Tokenizer loaded successfully for {model_name}")
+            
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype="auto",
+                device_map=device_map,
+                cache_dir=cache_dir
+            )
+            print(f"Model loaded successfully for {model_name}")
+        except Exception as e:
+            print(f"Error loading model {model_name}: {e}")
+            raise
     
-    def _format_messages(self, message_list: MessageList) -> str:
+    def _format_messages(self, message_list: MessageList) -> list:
         """Convert message list to the format expected by Qwen."""
         messages = []
         for message in message_list:
@@ -62,6 +78,7 @@ class QwenCompletionSampler(SamplerBase):
                 model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
                 
                 # Generate response
+                print(f"Generating response with max_new_tokens={self.max_tokens}, temperature={self.temperature}")
                 generated_ids = self.model.generate(
                     **model_inputs,
                     max_new_tokens=self.max_tokens,

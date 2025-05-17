@@ -8,6 +8,9 @@ import pandas as pd
 from . import common
 from .healthbench_eval import HealthBenchEval
 from .healthbench_meta_eval import HealthBenchMetaEval
+from .mmlu_eval import MMLUEval
+import os
+import json
 from .sampler.qwen_sampler import QwenCompletionSampler
 from .sampler.chat_completion_sampler import ChatCompletionSampler, OPENAI_SYSTEM_MESSAGE_API
 
@@ -96,6 +99,7 @@ def main():
         system_message=OPENAI_SYSTEM_MESSAGE_API,
         max_tokens=2048,
     )
+    equality_checker = ChatCompletionSampler(model="gpt-4-turbo-preview")
 
     def get_evals(eval_name, debug_mode):
         num_examples = (
@@ -103,6 +107,8 @@ def main():
         )
         # Set num_examples = None to reproduce full evals
         match eval_name:
+            case "mmlu":
+                return MMLUEval(num_examples=1 if debug_mode else num_examples)
             case "healthbench":
                 return HealthBenchEval(
                     grader_model=grading_sampler,
@@ -143,13 +149,14 @@ def main():
         for eval_name in evals_list:
             try:
                 evals[eval_name] = get_evals(eval_name, args.debug)
-            except Exception:
-                print(f"Error: eval '{eval_name}' not found.")
+            except Exception as e:
+                print(f"Error: eval '{eval_name}' not found. Exception: {e}")
                 return
     else:
         evals = {
             eval_name: get_evals(eval_name, args.debug)
             for eval_name in [
+                "mmlu",
                 "healthbench",
                 "healthbench_hard",
                 "healthbench_consensus",
