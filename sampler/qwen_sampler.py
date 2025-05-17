@@ -155,4 +155,4 @@ class QwenCompletionSampler(SamplerBase):
             response_text="Error: Failed to generate response after multiple attempts.",
             response_metadata={"error": "API communication failed"},
             actual_queried_message_list=prepared_messages,
-        )g
+        )
