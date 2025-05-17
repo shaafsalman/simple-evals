@@ -1,158 +1,158 @@
-import time
-import torch
-import re
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
+import time
+import json
+import requests
+from typing import Any, Optional, List, Dict
 
 from ..model_types import MessageList, SamplerBase, SamplerResponse
-from .. import common
+
 
 class QwenCompletionSampler(SamplerBase):
     """
-    Sampler for Qwen3-14B model using HuggingFace transformers.
+    Sample from Qwen models using vLLM server API endpoint
     """
 
     def __init__(
         self,
         model_name: str = "Qwen/Qwen3-14B",
+        api_url: str = "http://localhost:8000/v1/completions",
+        api_key: str = "test",
+        system_message: Optional[str] = None,
         temperature: float = 0.0,
-        max_tokens: int = 4048,  
+        max_tokens: int = 1024,
         enable_thinking: bool = False,
-        device_map: str = "auto",
     ):
         self.model_name = model_name
+        self.api_url = api_url
+        self.api_key = api_key
+        self.system_message = system_message
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.enable_thinking = enable_thinking
-        self.device_map = device_map
-        
-        # Set Huggingface cache directory if needed
-        cache_dir = os.environ.get("TRANSFORMERS_CACHE", None)
-        
-        print(f"Initializing {model_name} with temperature={temperature}, enable_thinking={enable_thinking}")
-        
-        try:
-            # Initialize tokenizer and model
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
-            print(f"Tokenizer loaded successfully for {model_name}")
+        self.headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+    def _pack_message(self, content: str, role: str) -> Dict[str, str]:
+        """Pack a message with role and content."""
+        return {"role": role, "content": content}
+
+    def _handle_text(self, text: str) -> Dict[str, Any]:
+        """Handle text content."""
+        return {"type": "text", "text": text}
+
+    def _prepare_messages(self, message_list: MessageList) -> MessageList:
+        """Prepare messages, adding system message if provided."""
+        prepared_messages = message_list.copy()
+        if self.system_message and not any(msg.get("role") == "system" for msg in prepared_messages):
+            prepared_messages.insert(0, {"role": "system", "content": self.system_message})
+        return prepared_messages
+
+    def _format_prompt(self, messages: MessageList) -> str:
+        """Format messages into a prompt string for the vLLM API."""
+        prompt = ""
+        for msg in messages:
+            role = msg.get("role", "").lower()
+            content = msg.get("content", "")
             
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype="auto",
-                device_map=device_map,
-                cache_dir=cache_dir
-            )
-            print(f"Model loaded successfully for {model_name}")
-        except Exception as e:
-            print(f"Error loading model {model_name}: {e}")
-            raise
-    
-    def _format_messages(self, message_list: MessageList) -> list:
-        """Convert message list to the format expected by Qwen."""
-        messages = []
-        for message in message_list:
-            messages.append({"role": message["role"], "content": message["content"]})
-        
-        return messages
-    
-    def _pack_message(self, role, content):
-        """Pack a message to be added to a message list."""
-        return {"role": str(role), "content": content}
-    
+            if role == "system":
+                prompt += f"<|im_start|>system\n{content}<|im_end|>\n"
+            elif role == "user":
+                prompt += f"<|im_start|>user\n{content}<|im_end|>\n"
+            elif role == "assistant":
+                prompt += f"<|im_start|>assistant\n{content}<|im_end|>\n"
+                
+        # Add the final assistant prompt to signal where the model should respond
+        prompt += "<|im_start|>assistant\n"
+        return prompt
+
     def __call__(self, message_list: MessageList) -> SamplerResponse:
+        """
+        Generate a response using the Qwen model via vLLM API.
+        
+        Args:
+            message_list: List of message dictionaries with role and content
+            
+        Returns:
+            SamplerResponse object with response text and metadata
+        """
+        # Prepare messages
+        prepared_messages = self._prepare_messages(message_list)
+        
+        # Format the prompt for vLLM API
+        prompt = self._format_prompt(prepared_messages)
+        
+        # Prepare the request payload
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
+        
+        # Add reasoning mode parameters if enabled
+        if self.enable_thinking:
+            payload["enable_reasoning"] = True
+        
         trial = 0
         max_retries = 3
         
         while trial < max_retries:
             try:
-                if not common.has_only_user_assistant_messages(message_list):
-                    raise ValueError(f"Qwen sampler only supports user and assistant messages, got {message_list}")
-                
-                # Format messages for Qwen
-                messages = self._format_messages(message_list)
-                
-                # Apply chat template
-                text = self.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=self.enable_thinking
+                # Send the request to the vLLM API
+                response = requests.post(
+                    self.api_url,
+                    headers=self.headers,
+                    data=json.dumps(payload),
+                    timeout=180  # 3-minute timeout
                 )
                 
-                # Tokenize input
-                model_inputs = self.tokenizer([text], return_tensors="pt").to(self.model.device)
+                # Check for successful response
+                response.raise_for_status()
                 
-                # Generate response
-                print(f"Generating response with max_new_tokens={self.max_tokens}, temperature={self.temperature}")
+                # Parse the JSON response
+                result = response.json()
                 
-                # For MMLU, let's print the input prompt to see what's being processed
-                if len(message_list) > 0 and "answer choice" in message_list[0]["content"].lower():
-                    print(f"Processing MMLU question: {message_list[0]['content'][:100]}...")
+                # Extract the generated text
+                content = result.get("choices", [{}])[0].get("text", "").strip()
                 
-                generated_ids = self.model.generate(
-                    **model_inputs,
-                    max_new_tokens=self.max_tokens,
-                    temperature=self.temperature if self.temperature > 0 else 1e-4,
-                    do_sample=(self.temperature > 0),
-                )
+                # Extract usage information if available
+                usage = result.get("usage", {})
+                if not usage:
+                    # Create basic usage info if not provided
+                    usage = {
+                        "prompt_tokens": len(prompt) // 4,  # Rough estimate
+                        "completion_tokens": len(content) // 4,  # Rough estimate
+                        "total_tokens": (len(prompt) + len(content)) // 4
+                    }
                 
-                # Extract only the newly generated tokens
-                output_ids = generated_ids[0][len(model_inputs.input_ids[0]):].tolist()
+                # Create metadata
+                metadata = {
+                    "usage": usage,
+                    "model": self.model_name,
+                }
                 
-                # Print a small success indicator
-                print(".", end="", flush=True)
-                
-                # Parse thinking content if enabled
-                thinking_content = ""
-                if self.enable_thinking:
-                    try:
-                        # Find </think> token (151668) to separate thinking from content
-                        index = len(output_ids) - output_ids[::-1].index(151668)
-                        thinking_content = self.tokenizer.decode(output_ids[:index], skip_special_tokens=True).strip("\n")
-                        content = self.tokenizer.decode(output_ids[index:], skip_special_tokens=True).strip("\n")
-                    except ValueError:
-                        # If </think> not found, treat everything as content
-                        content = self.tokenizer.decode(output_ids, skip_special_tokens=True).strip("\n")
-                else:
-                    content = self.tokenizer.decode(output_ids, skip_special_tokens=True).strip("\n")
-                
-                # For MMLU, ensure we extract just the letter answer if needed
-                if len(message_list) > 0 and "answer choice" in message_list[0]["content"].lower():
-                    # Try to extract just the letter answer (A, B, C, or D) for MMLU
-                    # First check if content directly starts with A, B, C, or D
-                    if content.strip().startswith(("A", "B", "C", "D")):
-                        content = content.strip()[0]  # Just take the first character
-                    # Look for "the answer is X" pattern
-                    elif "answer is " in content.lower():
-                        answer_match = re.search(r"answer is ([ABCD])", content, re.IGNORECASE)
-                        if answer_match:
-                            content = answer_match.group(1).upper()
-                    # Look for "X is correct" pattern
-                    elif " is correct" in content.lower():
-                        answer_match = re.search(r"([ABCD]) is correct", content, re.IGNORECASE)
-                        if answer_match:
-                            content = answer_match.group(1).upper()
-                    # If all else fails, just find any A, B, C, or D in the content
-                    else:
-                        answer_match = re.search(r"\b([ABCD])\b", content)
-                        if answer_match:
-                            content = answer_match.group(1).upper()
-                        else:
-                            # Default to A if no answer found (to avoid null responses)
-                            content = "A"
-                    
-                    print(f"\nExtracted answer: {content}")
-                
+                # Return the sampler response with the raw text
                 return SamplerResponse(
                     response_text=content,
-                    response_metadata={"thinking": thinking_content} if thinking_content else {},
-                    actual_queried_message_list=message_list,
+                    response_metadata=metadata,
+                    actual_queried_message_list=prepared_messages,
                 )
+                
+            except requests.RequestException as e:
+                exception_backoff = 2**trial  # exponential back off
+                time.sleep(exception_backoff)
+                trial += 1
                 
             except Exception as e:
                 exception_backoff = 2**trial  # exponential back off
-                print(f"Error encountered: {e}. Retrying after {exception_backoff} sec")
                 time.sleep(exception_backoff)
                 trial += 1
-                if trial >= max_retries:
-                    raise e  # Re-raise the exception if max retries reached
+        
+        # If all retries failed
+        return SamplerResponse(
+            response_text="Error: Failed to generate response after multiple attempts.",
+            response_metadata={"error": "API communication failed"},
+            actual_queried_message_list=prepared_messages,
+        )g

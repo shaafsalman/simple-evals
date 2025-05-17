@@ -65,7 +65,7 @@ def main():
 
     models = {
         # Reasoning Models
-        "Qwen/Qwen3-14B": QwenCompletionSampler(
+        "Qwen3-14B": QwenCompletionSampler(
             model_name="Qwen/Qwen3-14B",
         ),
      
@@ -102,7 +102,7 @@ def main():
         # Set num_examples = None to reproduce full evals
         match eval_name:
             case "mmlu":
-                return MMLUEval(num_examples=1 if debug_mode else num_examples)
+                return MMLUEval(num_examples=5000)
     
             case "healthbench":
                 return HealthBenchEval(
