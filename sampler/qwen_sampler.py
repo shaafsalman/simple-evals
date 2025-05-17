@@ -54,6 +54,10 @@ class QwenCompletionSampler(SamplerBase):
         
         return messages
     
+    def _pack_message(self, role, content):
+        """Pack a message to be added to a message list."""
+        return {"role": str(role), "content": content}
+    
     def __call__(self, message_list: MessageList) -> SamplerResponse:
         trial = 0
         max_retries = 3
